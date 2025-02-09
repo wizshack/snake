@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Simple Game – Walkable Building Interiors</title>
+  <title>Simple Game – Collectibles, Inventory & Bike Speed Boost</title>
   <style>
     body {
       text-align: center;
@@ -18,21 +18,49 @@
       top: 0;
       left: 0;
     }
+    /* Minimap on the left side */
     #minimap {
       position: absolute;
       top: 10px;
-      right: 10px;
+      left: 10px;
       width: 150px;
       height: 150px;
-      background: rgba(0, 0, 0, 0.5);
+      background: rgba(0,0,0,0.5);
       border: 2px solid white;
+    }
+    /* Money tracker below the minimap */
+    #moneyTracker {
+      position: absolute;
+      top: 170px;
+      left: 10px;
+      background: rgba(0,0,0,0.8);
+      color: white;
+      padding: 5px 10px;
+      border-radius: 5px;
+      font-size: 16px;
+    }
+    /* Inventory panel (hidden by default) */
+    #inventory {
+      position: absolute;
+      top: 210px;
+      left: 10px;
+      background: rgba(0,0,0,0.8);
+      color: white;
+      padding: 10px;
+      border-radius: 5px;
+      font-size: 16px;
+      display: none;
+    }
+    #inventory .inventory-item {
+      cursor: pointer;
+      color: lightblue;
     }
     #dialogBox {
       position: absolute;
       bottom: 20px;
       left: 50%;
       transform: translateX(-50%);
-      background: rgba(0, 0, 0, 0.8);
+      background: rgba(0,0,0,0.8);
       color: white;
       padding: 10px;
       border-radius: 5px;
@@ -43,33 +71,50 @@
 <body>
   <canvas id="gameCanvas"></canvas>
   <canvas id="minimap"></canvas>
+  <div id="moneyTracker">$0</div>
+  <div id="inventory">Inventory:<br>Empty</div>
   <div id="dialogBox"></div>
 
   <script>
+    // Set up canvas and context variables
     const canvas = document.getElementById("gameCanvas");
     const ctx = canvas.getContext("2d");
     const minimap = document.getElementById("minimap");
     const minimapCtx = minimap.getContext("2d");
+    const moneyTracker = document.getElementById("moneyTracker");
+    const inventoryDiv = document.getElementById("inventory");
     const dialogBox = document.getElementById("dialogBox");
 
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
 
+    // Define the base speed and set player speed to baseSpeed.
+    const baseSpeed = 0.75; // Reduced by 50% from previous 1.5
     let player = {
       x: canvas.width / 2,
       y: canvas.height / 2,
       size: 20,
-      speed: 2,
+      speed: baseSpeed,
       dx: 0,
       dy: 0
     };
 
-    // Define some constants for walls and doors.
-    const wallThickness = 5;    // Thickness of building walls
-    const doorWidth = 40;       // Width of the door opening (non-collidable gap)
-    const doorHeight = 15;      // Height of the door drawn (for visual purposes)
+    // Global money and inventory variables
+    let money = 0;
+    let inventory = [];
 
-    // Adjusted building definitions (x, y, width, height)
+    // Variable to track if a bike boost is active
+    let bikeSpeedActive = false;
+
+    // Array for collectible coins (each coin is worth $50)
+    let coins = [];
+
+    // Constants for building walls and doors
+    const wallThickness = 5;
+    const doorWidth = 40;
+    const doorHeight = 15;
+
+    // Buildings and streets (same as before)
     let buildings = [
       { x: 200, y: 150, width: 100, height: 100 },
       { x: 500, y: 300, width: 150, height: 150 },
@@ -82,10 +127,14 @@
       { x: 400, y: 0, width: 50, height: canvas.height }
     ];
 
+    // NPCs array – first NPC is a vehicle seller
     let npcs = [
-      { x: 600, y: 400, size: 20, message: "Hello! Watch out for cars!" },
+      { x: 600, y: 400, size: 20, message: "Vehicle Seller", type: "vehicleSeller", carPrice: 1000, bikePrice: 100 },
       { x: 250, y: 350, size: 20, message: "Stay on the sidewalks!" }
     ];
+
+    let activeVendor = null;
+    const interactionThreshold = 100; // Maximum distance for interaction
 
     // Helper function: returns true if two rectangles intersect.
     function rectsIntersect(r1, r2) {
@@ -97,89 +146,50 @@
       );
     }
 
-    // For each building, compute the wall segments (as rectangles)
-    // Walls are drawn along the building perimeter, except for the bottom center gap (the door).
+    // Compute wall segments for a building (with a gap for the door)
     function getWalls(building) {
       const walls = [];
       // Top wall (full width)
-      walls.push({ 
-        x: building.x, 
-        y: building.y, 
-        width: building.width, 
-        height: wallThickness 
-      });
+      walls.push({ x: building.x, y: building.y, width: building.width, height: wallThickness });
       // Left wall (full height)
-      walls.push({ 
-        x: building.x, 
-        y: building.y, 
-        width: wallThickness, 
-        height: building.height 
-      });
+      walls.push({ x: building.x, y: building.y, width: wallThickness, height: building.height });
       // Right wall (full height)
-      walls.push({ 
-        x: building.x + building.width - wallThickness, 
-        y: building.y, 
-        width: wallThickness, 
-        height: building.height 
-      });
-      // Bottom wall is split into two segments (left and right of the door)
+      walls.push({ x: building.x + building.width - wallThickness, y: building.y, width: wallThickness, height: building.height });
+      // Bottom wall is split into two segments (gap for door)
       const doorX = building.x + building.width / 2 - doorWidth / 2;
-      // Left bottom wall segment
-      walls.push({
-        x: building.x,
-        y: building.y + building.height - wallThickness,
-        width: doorX - building.x,
-        height: wallThickness
-      });
-      // Right bottom wall segment
-      walls.push({
-        x: doorX + doorWidth,
-        y: building.y + building.height - wallThickness,
-        width: (building.x + building.width) - (doorX + doorWidth),
-        height: wallThickness
-      });
+      walls.push({ x: building.x, y: building.y + building.height - wallThickness, width: doorX - building.x, height: wallThickness });
+      walls.push({ x: doorX + doorWidth, y: building.y + building.height - wallThickness, width: (building.x + building.width) - (doorX + doorWidth), height: wallThickness });
       return walls;
     }
 
-    // Updated collision detection:
-    // Check collisions only with building walls (the interiors are walkable).
+    // Check collision against building walls
     function checkCollision(x, y) {
       const pRect = { x: x, y: y, width: player.size, height: player.size };
       for (const building of buildings) {
         const walls = getWalls(building);
         for (const wall of walls) {
-          if (rectsIntersect(pRect, wall)) {
-            return true;
-          }
+          if (rectsIntersect(pRect, wall)) return true;
         }
       }
       return false;
     }
 
-    // Draw the player.
+    // Draw the player
     function drawPlayer() {
       ctx.fillStyle = "red";
       ctx.fillRect(player.x, player.y, player.size, player.size);
     }
 
-    // Draw buildings:
-    // First, draw the building "floor" (interior) as a light color.
-    // Then draw the walls using our wall segments.
-    // Finally, draw a door (for visuals) over the gap in the bottom wall.
+    // Draw buildings: interior, walls, and door (visual)
     function drawBuildings() {
       buildings.forEach(building => {
-        // Draw building interior (floor)
         ctx.fillStyle = "lightgray";
         ctx.fillRect(building.x, building.y, building.width, building.height);
-        
-        // Draw building walls
         const walls = getWalls(building);
         ctx.fillStyle = "gray";
         walls.forEach(wall => {
           ctx.fillRect(wall.x, wall.y, wall.width, wall.height);
         });
-        
-        // Draw the door (visual)
         const doorX = building.x + building.width / 2 - doorWidth / 2;
         const doorY = building.y + building.height - wallThickness;
         ctx.fillStyle = "brown";
@@ -187,17 +197,15 @@
       });
     }
 
-    // Draw streets with dashed yellow lines.
+    // Draw streets with dashed yellow lines
     function drawStreets() {
       streets.forEach(street => {
         ctx.fillStyle = "#555";
         ctx.fillRect(street.x, street.y, street.width, street.height);
-
         ctx.strokeStyle = "yellow";
         ctx.setLineDash([15, 10]);
         ctx.lineWidth = 3;
         ctx.beginPath();
-
         if (street.width < street.height) {
           ctx.moveTo(street.x + street.width / 2, street.y);
           ctx.lineTo(street.x + street.width / 2, street.y + street.height);
@@ -210,7 +218,7 @@
       });
     }
 
-    // Draw NPCs.
+    // Draw NPCs
     function drawNPCs() {
       ctx.fillStyle = "blue";
       npcs.forEach(npc => {
@@ -218,7 +226,60 @@
       });
     }
 
-    // Check NPC interaction (triggered on click).
+    // Draw coins (collectible money) on the main canvas
+    function drawCoins() {
+      ctx.fillStyle = "gold";
+      coins.forEach(coin => {
+        ctx.beginPath();
+        ctx.arc(coin.x + coin.size / 2, coin.y + coin.size / 2, coin.size, 0, 2 * Math.PI);
+        ctx.fill();
+      });
+    }
+
+    // Update the money tracker display
+    function updateMoneyDisplay() {
+      moneyTracker.innerText = "$" + money;
+    }
+
+    // Update the inventory display. Bike items will be rendered as clickable spans.
+    function updateInventoryDisplay() {
+      let html = "Inventory:<br>";
+      if (inventory.length === 0) {
+        html += "Empty";
+      } else {
+        inventory.forEach((item, index) => {
+          if (item === "Bike") {
+            html += `<span class="inventory-item" onclick="activateBikeBoost(${index})">Bike</span><br>`;
+          } else {
+            html += item + "<br>";
+          }
+        });
+      }
+      inventoryDiv.innerHTML = html;
+    }
+
+    // Function to activate bike speed boost when a bike item is clicked.
+    // The boost lasts 10 seconds and gives a 25% speed increase.
+    function activateBikeBoost(index) {
+      if (bikeSpeedActive) {
+        showDialog("Bike boost is already active!");
+        return;
+      }
+      // Remove the bike from inventory (consuming the item)
+      inventory.splice(index, 1);
+      updateInventoryDisplay();
+      bikeSpeedActive = true;
+      player.speed = baseSpeed * 1.25;
+      showDialog("Bike activated: Speed boost for 10 seconds!");
+      // After 10 seconds, revert speed
+      setTimeout(() => {
+        player.speed = baseSpeed;
+        bikeSpeedActive = false;
+        showDialog("Bike boost ended.");
+      }, 10000);
+    }
+
+    // Check NPC interaction when clicking on an NPC
     function checkNPCInteraction(x, y) {
       npcs.forEach(npc => {
         if (
@@ -227,29 +288,55 @@
           y >= npc.y &&
           y <= npc.y + npc.size
         ) {
-          showDialog(npc.message);
+          const npcCenterX = npc.x + npc.size / 2;
+          const npcCenterY = npc.y + npc.size / 2;
+          const playerCenterX = player.x + player.size / 2;
+          const playerCenterY = player.y + player.size / 2;
+          const dx = npcCenterX - playerCenterX;
+          const dy = npcCenterY - playerCenterY;
+          const distance = Math.sqrt(dx * dx + dy * dy);
+          if (distance > interactionThreshold) {
+            showDialog("You are too far away to interact!");
+            return;
+          }
+          if (npc.type === "vehicleSeller") {
+            activeVendor = npc;
+            showDialog("Vehicle Seller: Press 1 for Car ($" + npc.carPrice + ") or 2 for Bike ($" + npc.bikePrice + ")");
+          } else {
+            showDialog(npc.message);
+          }
         }
       });
     }
 
-    // Click-on-door to "enter" a building.
-    // (This code remains the same as before.)
+    // Spawn a coin at a random location (only if fewer than 5 coins exist)
+    function spawnCoin() {
+      if (coins.length >= 5) return;
+      const coinSize = 10;
+      const coinValue = 50;
+      const x = Math.random() * (canvas.width - coinSize);
+      const y = Math.random() * (canvas.height - coinSize);
+      coins.push({ x: x, y: y, size: coinSize, value: coinValue });
+    }
+
+    // Spawn a new coin every 5 seconds
+    setInterval(spawnCoin, 5000);
+
+    // Listen for canvas clicks (for door and NPC interactions)
     canvas.addEventListener("click", (event) => {
       const rect = canvas.getBoundingClientRect();
       const clickX = event.clientX - rect.left;
       const clickY = event.clientY - rect.top;
       let doorClicked = false;
-
       buildings.forEach(building => {
         const doorX = building.x + building.width / 2 - doorWidth / 2;
-        const doorY = building.y + building.height - wallThickness;  // door gap position
+        const doorY = building.y + building.height - wallThickness;
         if (
           clickX >= doorX &&
           clickX <= doorX + doorWidth &&
           clickY >= doorY &&
           clickY <= doorY + doorHeight
         ) {
-          // Door area was clicked. Check if the player is close.
           const doorCenterX = doorX + doorWidth / 2;
           const doorCenterY = doorY + doorHeight / 2;
           const playerCenterX = player.x + player.size / 2;
@@ -257,9 +344,7 @@
           const dx = doorCenterX - playerCenterX;
           const dy = doorCenterY - playerCenterY;
           const distance = Math.sqrt(dx * dx + dy * dy);
-          const threshold = 100; // adjust threshold as needed
-
-          if (distance <= threshold) {
+          if (distance <= interactionThreshold) {
             showDialog("Entered building!");
           } else {
             showDialog("You are too far away!");
@@ -267,18 +352,27 @@
           doorClicked = true;
         }
       });
-
       if (!doorClicked) {
         checkNPCInteraction(clickX, clickY);
       }
     });
 
-    // Movement keys.
+    // Listen for movement keys and for Tab to toggle inventory
     document.addEventListener("keydown", (e) => {
       if (e.key === "ArrowRight" || e.key === "d") player.dx = player.speed;
       else if (e.key === "ArrowLeft" || e.key === "a") player.dx = -player.speed;
       else if (e.key === "ArrowUp" || e.key === "w") player.dy = -player.speed;
       else if (e.key === "ArrowDown" || e.key === "s") player.dy = player.speed;
+      else if (e.key === "Tab") {
+        e.preventDefault();
+        // Toggle inventory display
+        if (inventoryDiv.style.display === "none") {
+          inventoryDiv.style.display = "block";
+          updateInventoryDisplay();
+        } else {
+          inventoryDiv.style.display = "none";
+        }
+      }
     });
 
     document.addEventListener("keyup", (e) => {
@@ -286,74 +380,118 @@
       if (["ArrowUp", "w", "ArrowDown", "s"].includes(e.key)) player.dy = 0;
     });
 
-    // Draw the minimap (updated to reflect the building interior color and door).
+    // Listen for keys "1" and "2" to complete a purchase when a vendor is active.
+    document.addEventListener("keydown", (e) => {
+      if (activeVendor) {
+        if (e.key === "1") {
+          if (money >= activeVendor.carPrice) {
+            money -= activeVendor.carPrice;
+            inventory.push("Car");
+            showDialog("Bought Car!");
+            updateMoneyDisplay();
+            updateInventoryDisplay();
+          } else {
+            showDialog("Not enough money for Car!");
+          }
+          activeVendor = null;
+        } else if (e.key === "2") {
+          if (money >= activeVendor.bikePrice) {
+            money -= activeVendor.bikePrice;
+            inventory.push("Bike");
+            showDialog("Bought Bike!");
+            updateMoneyDisplay();
+            updateInventoryDisplay();
+          } else {
+            showDialog("Not enough money for Bike!");
+          }
+          activeVendor = null;
+        }
+      }
+    });
+
+    // Draw the minimap (including buildings, NPCs, coins, and the player)
     function drawMinimap() {
       minimapCtx.clearRect(0, 0, minimap.width, minimap.height);
       const scaleX = minimap.width / canvas.width;
       const scaleY = minimap.height / canvas.height;
-
-      // Draw building interiors and walls.
       buildings.forEach(b => {
-        // Draw building interior.
         minimapCtx.fillStyle = "lightgray";
         minimapCtx.fillRect(b.x * scaleX, b.y * scaleY, b.width * scaleX, b.height * scaleY);
-        // Draw walls.
         const walls = getWalls(b);
         minimapCtx.fillStyle = "gray";
         walls.forEach(wall => {
           minimapCtx.fillRect(wall.x * scaleX, wall.y * scaleY, wall.width * scaleX, wall.height * scaleY);
         });
-        // Draw door.
         const doorX = b.x + b.width / 2 - doorWidth / 2;
         const doorY = b.y + b.height - wallThickness;
         minimapCtx.fillStyle = "brown";
         minimapCtx.fillRect(doorX * scaleX, doorY * scaleY, doorWidth * scaleX, doorHeight * scaleY);
       });
-
-      // Draw streets.
       minimapCtx.fillStyle = "#555";
       streets.forEach(s => {
         minimapCtx.fillRect(s.x * scaleX, s.y * scaleY, s.width * scaleX, s.height * scaleY);
       });
-
-      // Draw NPCs.
       minimapCtx.fillStyle = "blue";
       npcs.forEach(npc => {
         minimapCtx.fillRect(npc.x * scaleX, npc.y * scaleY, npc.size * scaleX, npc.size * scaleY);
       });
-
-      // Draw player.
+      // Draw coins on the minimap
+      minimapCtx.fillStyle = "gold";
+      coins.forEach(coin => {
+        minimapCtx.beginPath();
+        minimapCtx.arc((coin.x + coin.size / 2) * scaleX, (coin.y + coin.size / 2) * scaleY, coin.size * scaleX, 0, 2 * Math.PI);
+        minimapCtx.fill();
+      });
       minimapCtx.fillStyle = "red";
       minimapCtx.fillRect(player.x * scaleX, player.y * scaleY, player.size * scaleX, player.size * scaleY);
     }
 
-    // Main update loop.
+    // Main update loop
     function update() {
-      const newX = player.x + player.dx;
-      const newY = player.y + player.dy;
+      let newX = player.x + player.dx;
+      let newY = player.y + player.dy;
+      // Boundary check
+      if (newX < 0) newX = 0;
+      if (newY < 0) newY = 0;
+      if (newX + player.size > canvas.width) newX = canvas.width - player.size;
+      if (newY + player.size > canvas.height) newY = canvas.height - player.size;
+      // Check collision with building walls
       if (!checkCollision(newX, newY)) {
         player.x = newX;
         player.y = newY;
       }
-
+      // Check coin collection
+      for (let i = coins.length - 1; i >= 0; i--) {
+        let coin = coins[i];
+        if (rectsIntersect(
+            { x: player.x, y: player.y, width: player.size, height: player.size },
+            { x: coin.x, y: coin.y, width: coin.size, height: coin.size }
+          )) {
+          money += coin.value;
+          updateMoneyDisplay();
+          coins.splice(i, 1);
+        }
+      }
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       drawStreets();
       drawBuildings();
       drawNPCs();
+      drawCoins();
       drawPlayer();
       drawMinimap();
-
       requestAnimationFrame(update);
     }
 
+    // Show dialog messages for 6 seconds
     function showDialog(message) {
       dialogBox.innerText = message;
       dialogBox.style.display = "block";
       setTimeout(() => {
         dialogBox.style.display = "none";
-      }, 3000);
+      }, 6000);
     }
 
+    updateMoneyDisplay();
     update();
   </script>
 </body>
