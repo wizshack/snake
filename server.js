@@ -8,7 +8,7 @@ const path = require("path");
 const app = express();
 
 // Setup Passport with Discord Strategy
-passport.use(new DiscordStrategy({
+passport.use(new DiscordStrategy({  
     clientID: process.env.DISCORD_CLIENT_ID,
     clientSecret: process.env.DISCORD_CLIENT_SECRET,
     callbackURL: "http://localhost:3000/auth/discord/callback",
@@ -69,7 +69,7 @@ app.get("/profile", (req, res) => {
     `);
 });
 
-// Serve the Snake Game (index.html)
+// Serve the Snake Game (index.html) from the correct folder
 app.get("/game", (req, res) => {
     res.sendFile(path.join(__dirname, "index.html"));
 });
