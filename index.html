@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Snake Game</title>
+    <style>
+        body { text-align: center; font-family: Arial, sans-serif; }
+        canvas { background: black; display: block; margin: auto; }
+        #restartButton, #discordLogin { margin-top: 10px; padding: 10px 20px; font-size: 16px; cursor: pointer; }
+        #leaderboard { margin-top: 20px; list-style-type: none; padding: 0; }
+    </style>
+</head>
+<body>
+    <h1>Snake Game</h1>
+    <p>Use Arrow Keys to Move</p>
+    <canvas id="gameCanvas" width="400" height="400"></canvas>
+    <button id="restartButton">Restart Game</button>
+    <button id="discordLogin">Login with Discord</button>
+    <h2>Leaderboard</h2>
+    <ul id="leaderboard"></ul>
+    
+    <script>
+        const canvas = document.getElementById("gameCanvas");
+        const ctx = canvas.getContext("2d");
+        const restartButton = document.getElementById("restartButton");
+        const discordLogin = document.getElementById("discordLogin");
+        const leaderboard = document.getElementById("leaderboard");
+
+        const box = 20;
+        let snake = [{ x: 200, y: 200 }];
+        let direction = "RIGHT";
+        let food = { x: Math.floor(Math.random() * 20) * box, y: Math.floor(Math.random() * 20) * box };
+        let score = 0;
+        let gameRunning = true;
+        let scores = [];
+
+        document.addEventListener("keydown", changeDirection);
+        restartButton.addEventListener("click", restartGame);
+        discordLogin.addEventListener("click", loginWithDiscord);
+
+        function changeDirection(event) {
+            const key = event.keyCode;
+            if (key === 37 && direction !== "RIGHT") direction = "LEFT";
+            else if (key === 38 && direction !== "DOWN") direction = "UP";
+            else if (key === 39 && direction !== "LEFT") direction = "RIGHT";
+            else if (key === 40 && direction !== "UP") direction = "DOWN";
+        }
+
+        function draw() {
+            if (!gameRunning) return;
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = "red";
+            ctx.fillRect(food.x, food.y, box, box);
+
+            for (let i = 0; i < snake.length; i++) {
+                ctx.fillStyle = (i === 0) ? "lime" : "green";
+                ctx.fillRect(snake[i].x, snake[i].y, box, box);
+            }
+
+            let newHead = { x: snake[0].x, y: snake[0].y };
+            if (direction === "LEFT") newHead.x -= box;
+            if (direction === "UP") newHead.y -= box;
+            if (direction === "RIGHT") newHead.x += box;
+            if (direction === "DOWN") newHead.y += box;
+
+            if (newHead.x === food.x && newHead.y === food.y) {
+                score++;
+                food = { x: Math.floor(Math.random() * 20) * box, y: Math.floor(Math.random() * 20) * box };
+            } else {
+                snake.pop();
+            }
+
+            if (newHead.x < 0 || newHead.y < 0 || newHead.x >= canvas.width || newHead.y >= canvas.height || snake.some(segment => segment.x === newHead.x && segment.y === newHead.y)) {
+                alert("Game Over! Score: " + score);
+                scores.push(score);
+                updateLeaderboard();
+                gameRunning = false;
+                return;
+            }
+
+            snake.unshift(newHead);
+            setTimeout(draw, 100);
+        }
+
+        function restartGame() {
+            snake = [{ x: 200, y: 200 }];
+            direction = "RIGHT";
+            food = { x: Math.floor(Math.random() * 20) * box, y: Math.floor(Math.random() * 20) * box };
+            score = 0;
+            gameRunning = true;
+            draw();
+        }
+
+        function updateLeaderboard() {
+            leaderboard.innerHTML = "";
+            scores.sort((a, b) => b - a).slice(0, 5).forEach((s, i) => {
+                const li = document.createElement("li");
+                li.textContent = `#${i + 1} - Score: ${s}`;
+                leaderboard.appendChild(li);
+            });
+        }
+
+        function loginWithDiscord() {
+            const redirectUri = encodeURIComponent("http://localhost:3000/auth/discord/callback"); // Change to your actual redirect URI
+            window.location.href = `https://discord.com/api/oauth2/authorize?client_id=1338268427416109096&redirect_uri=${redirectUri}&response_type=code&scope=identify`;
+        }
+    </script>
+</body>
+</html>
