@@ -1,76 +1,360 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Simple Game</title>
-    <style>
-        body { text-align: center; font-family: Arial, sans-serif; margin: 0; overflow: hidden; }
-        canvas { background: #87CEEB; display: block; position: absolute; top: 0; left: 0; }
-    </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Simple Game – Walkable Building Interiors</title>
+  <style>
+    body {
+      text-align: center;
+      font-family: Arial, sans-serif;
+      margin: 0;
+      overflow: hidden;
+    }
+    canvas {
+      background: #87CEEB;
+      display: block;
+      position: absolute;
+      top: 0;
+      left: 0;
+    }
+    #minimap {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      width: 150px;
+      height: 150px;
+      background: rgba(0, 0, 0, 0.5);
+      border: 2px solid white;
+    }
+    #dialogBox {
+      position: absolute;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0, 0, 0, 0.8);
+      color: white;
+      padding: 10px;
+      border-radius: 5px;
+      display: none;
+    }
+  </style>
 </head>
 <body>
-    <canvas id="gameCanvas"></canvas>
-    
-    <script>
-        const canvas = document.getElementById("gameCanvas");
-        const ctx = canvas.getContext("2d");
+  <canvas id="gameCanvas"></canvas>
+  <canvas id="minimap"></canvas>
+  <div id="dialogBox"></div>
 
-        canvas.width = window.innerWidth;
-        canvas.height = window.innerHeight;
+  <script>
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
+    const minimap = document.getElementById("minimap");
+    const minimapCtx = minimap.getContext("2d");
+    const dialogBox = document.getElementById("dialogBox");
 
-        let player = {
-            x: canvas.width / 2,
-            y: canvas.height / 2,
-            size: 20,
-            speed: 2,
-            dx: 0,
-            dy: 0
-        };
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
 
-        function drawPlayer() {
-            ctx.fillStyle = "red";
-            ctx.fillRect(player.x, player.y, player.size, player.size);
+    let player = {
+      x: canvas.width / 2,
+      y: canvas.height / 2,
+      size: 20,
+      speed: 2,
+      dx: 0,
+      dy: 0
+    };
+
+    // Define some constants for walls and doors.
+    const wallThickness = 5;    // Thickness of building walls
+    const doorWidth = 40;       // Width of the door opening (non-collidable gap)
+    const doorHeight = 15;      // Height of the door drawn (for visual purposes)
+
+    // Adjusted building definitions (x, y, width, height)
+    let buildings = [
+      { x: 200, y: 150, width: 100, height: 100 },
+      { x: 500, y: 300, width: 150, height: 150 },
+      { x: 700, y: 30,  width: 120, height: 200 },
+      { x: 450, y: 500, width: 200, height: 120 }
+    ];
+
+    let streets = [
+      { x: 0, y: 250, width: canvas.width, height: 50 },
+      { x: 400, y: 0, width: 50, height: canvas.height }
+    ];
+
+    let npcs = [
+      { x: 600, y: 400, size: 20, message: "Hello! Watch out for cars!" },
+      { x: 250, y: 350, size: 20, message: "Stay on the sidewalks!" }
+    ];
+
+    // Helper function: returns true if two rectangles intersect.
+    function rectsIntersect(r1, r2) {
+      return !(
+        r2.x > r1.x + r1.width ||
+        r2.x + r2.width < r1.x ||
+        r2.y > r1.y + r1.height ||
+        r2.y + r2.height < r1.y
+      );
+    }
+
+    // For each building, compute the wall segments (as rectangles)
+    // Walls are drawn along the building perimeter, except for the bottom center gap (the door).
+    function getWalls(building) {
+      const walls = [];
+      // Top wall (full width)
+      walls.push({ 
+        x: building.x, 
+        y: building.y, 
+        width: building.width, 
+        height: wallThickness 
+      });
+      // Left wall (full height)
+      walls.push({ 
+        x: building.x, 
+        y: building.y, 
+        width: wallThickness, 
+        height: building.height 
+      });
+      // Right wall (full height)
+      walls.push({ 
+        x: building.x + building.width - wallThickness, 
+        y: building.y, 
+        width: wallThickness, 
+        height: building.height 
+      });
+      // Bottom wall is split into two segments (left and right of the door)
+      const doorX = building.x + building.width / 2 - doorWidth / 2;
+      // Left bottom wall segment
+      walls.push({
+        x: building.x,
+        y: building.y + building.height - wallThickness,
+        width: doorX - building.x,
+        height: wallThickness
+      });
+      // Right bottom wall segment
+      walls.push({
+        x: doorX + doorWidth,
+        y: building.y + building.height - wallThickness,
+        width: (building.x + building.width) - (doorX + doorWidth),
+        height: wallThickness
+      });
+      return walls;
+    }
+
+    // Updated collision detection:
+    // Check collisions only with building walls (the interiors are walkable).
+    function checkCollision(x, y) {
+      const pRect = { x: x, y: y, width: player.size, height: player.size };
+      for (const building of buildings) {
+        const walls = getWalls(building);
+        for (const wall of walls) {
+          if (rectsIntersect(pRect, wall)) {
+            return true;
+          }
         }
+      }
+      return false;
+    }
 
-        function update() {
-            player.x += player.dx;
-            player.y += player.dy;
-            
-            // Collision detection with screen edges
-            if (player.x < 0) player.x = 0;
-            if (player.y < 0) player.y = 0;
-            if (player.x + player.size > canvas.width) player.x = canvas.width - player.size;
-            if (player.y + player.size > canvas.height) player.y = canvas.height - player.size;
-            
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            drawPlayer();
-            requestAnimationFrame(update);
-        }
+    // Draw the player.
+    function drawPlayer() {
+      ctx.fillStyle = "red";
+      ctx.fillRect(player.x, player.y, player.size, player.size);
+    }
 
-        function movePlayer(e) {
-            if (e.key === "ArrowRight" || e.key === "d") player.dx = player.speed;
-            else if (e.key === "ArrowLeft" || e.key === "a") player.dx = -player.speed;
-            else if (e.key === "ArrowUp" || e.key === "w") player.dy = -player.speed;
-            else if (e.key === "ArrowDown" || e.key === "s") player.dy = player.speed;
-        }
-
-        function stopPlayer(e) {
-            if (e.key === "ArrowRight" || e.key === "d") player.dx = 0;
-            else if (e.key === "ArrowLeft" || e.key === "a") player.dx = 0;
-            else if (e.key === "ArrowUp" || e.key === "w") player.dy = 0;
-            else if (e.key === "ArrowDown" || e.key === "s") player.dy = 0;
-        }
-
-        document.addEventListener("keydown", movePlayer);
-        document.addEventListener("keyup", stopPlayer);
-        window.addEventListener("resize", () => {
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight;
+    // Draw buildings:
+    // First, draw the building "floor" (interior) as a light color.
+    // Then draw the walls using our wall segments.
+    // Finally, draw a door (for visuals) over the gap in the bottom wall.
+    function drawBuildings() {
+      buildings.forEach(building => {
+        // Draw building interior (floor)
+        ctx.fillStyle = "lightgray";
+        ctx.fillRect(building.x, building.y, building.width, building.height);
+        
+        // Draw building walls
+        const walls = getWalls(building);
+        ctx.fillStyle = "gray";
+        walls.forEach(wall => {
+          ctx.fillRect(wall.x, wall.y, wall.width, wall.height);
         });
+        
+        // Draw the door (visual)
+        const doorX = building.x + building.width / 2 - doorWidth / 2;
+        const doorY = building.y + building.height - wallThickness;
+        ctx.fillStyle = "brown";
+        ctx.fillRect(doorX, doorY, doorWidth, doorHeight);
+      });
+    }
 
-        update();
-    </script>
+    // Draw streets with dashed yellow lines.
+    function drawStreets() {
+      streets.forEach(street => {
+        ctx.fillStyle = "#555";
+        ctx.fillRect(street.x, street.y, street.width, street.height);
+
+        ctx.strokeStyle = "yellow";
+        ctx.setLineDash([15, 10]);
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+
+        if (street.width < street.height) {
+          ctx.moveTo(street.x + street.width / 2, street.y);
+          ctx.lineTo(street.x + street.width / 2, street.y + street.height);
+        } else {
+          ctx.moveTo(street.x, street.y + street.height / 2);
+          ctx.lineTo(street.x + street.width, street.y + street.height / 2);
+        }
+        ctx.stroke();
+        ctx.setLineDash([]);
+      });
+    }
+
+    // Draw NPCs.
+    function drawNPCs() {
+      ctx.fillStyle = "blue";
+      npcs.forEach(npc => {
+        ctx.fillRect(npc.x, npc.y, npc.size, npc.size);
+      });
+    }
+
+    // Check NPC interaction (triggered on click).
+    function checkNPCInteraction(x, y) {
+      npcs.forEach(npc => {
+        if (
+          x >= npc.x &&
+          x <= npc.x + npc.size &&
+          y >= npc.y &&
+          y <= npc.y + npc.size
+        ) {
+          showDialog(npc.message);
+        }
+      });
+    }
+
+    // Click-on-door to "enter" a building.
+    // (This code remains the same as before.)
+    canvas.addEventListener("click", (event) => {
+      const rect = canvas.getBoundingClientRect();
+      const clickX = event.clientX - rect.left;
+      const clickY = event.clientY - rect.top;
+      let doorClicked = false;
+
+      buildings.forEach(building => {
+        const doorX = building.x + building.width / 2 - doorWidth / 2;
+        const doorY = building.y + building.height - wallThickness;  // door gap position
+        if (
+          clickX >= doorX &&
+          clickX <= doorX + doorWidth &&
+          clickY >= doorY &&
+          clickY <= doorY + doorHeight
+        ) {
+          // Door area was clicked. Check if the player is close.
+          const doorCenterX = doorX + doorWidth / 2;
+          const doorCenterY = doorY + doorHeight / 2;
+          const playerCenterX = player.x + player.size / 2;
+          const playerCenterY = player.y + player.size / 2;
+          const dx = doorCenterX - playerCenterX;
+          const dy = doorCenterY - playerCenterY;
+          const distance = Math.sqrt(dx * dx + dy * dy);
+          const threshold = 100; // adjust threshold as needed
+
+          if (distance <= threshold) {
+            showDialog("Entered building!");
+          } else {
+            showDialog("You are too far away!");
+          }
+          doorClicked = true;
+        }
+      });
+
+      if (!doorClicked) {
+        checkNPCInteraction(clickX, clickY);
+      }
+    });
+
+    // Movement keys.
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "ArrowRight" || e.key === "d") player.dx = player.speed;
+      else if (e.key === "ArrowLeft" || e.key === "a") player.dx = -player.speed;
+      else if (e.key === "ArrowUp" || e.key === "w") player.dy = -player.speed;
+      else if (e.key === "ArrowDown" || e.key === "s") player.dy = player.speed;
+    });
+
+    document.addEventListener("keyup", (e) => {
+      if (["ArrowRight", "d", "ArrowLeft", "a"].includes(e.key)) player.dx = 0;
+      if (["ArrowUp", "w", "ArrowDown", "s"].includes(e.key)) player.dy = 0;
+    });
+
+    // Draw the minimap (updated to reflect the building interior color and door).
+    function drawMinimap() {
+      minimapCtx.clearRect(0, 0, minimap.width, minimap.height);
+      const scaleX = minimap.width / canvas.width;
+      const scaleY = minimap.height / canvas.height;
+
+      // Draw building interiors and walls.
+      buildings.forEach(b => {
+        // Draw building interior.
+        minimapCtx.fillStyle = "lightgray";
+        minimapCtx.fillRect(b.x * scaleX, b.y * scaleY, b.width * scaleX, b.height * scaleY);
+        // Draw walls.
+        const walls = getWalls(b);
+        minimapCtx.fillStyle = "gray";
+        walls.forEach(wall => {
+          minimapCtx.fillRect(wall.x * scaleX, wall.y * scaleY, wall.width * scaleX, wall.height * scaleY);
+        });
+        // Draw door.
+        const doorX = b.x + b.width / 2 - doorWidth / 2;
+        const doorY = b.y + b.height - wallThickness;
+        minimapCtx.fillStyle = "brown";
+        minimapCtx.fillRect(doorX * scaleX, doorY * scaleY, doorWidth * scaleX, doorHeight * scaleY);
+      });
+
+      // Draw streets.
+      minimapCtx.fillStyle = "#555";
+      streets.forEach(s => {
+        minimapCtx.fillRect(s.x * scaleX, s.y * scaleY, s.width * scaleX, s.height * scaleY);
+      });
+
+      // Draw NPCs.
+      minimapCtx.fillStyle = "blue";
+      npcs.forEach(npc => {
+        minimapCtx.fillRect(npc.x * scaleX, npc.y * scaleY, npc.size * scaleX, npc.size * scaleY);
+      });
+
+      // Draw player.
+      minimapCtx.fillStyle = "red";
+      minimapCtx.fillRect(player.x * scaleX, player.y * scaleY, player.size * scaleX, player.size * scaleY);
+    }
+
+    // Main update loop.
+    function update() {
+      const newX = player.x + player.dx;
+      const newY = player.y + player.dy;
+      if (!checkCollision(newX, newY)) {
+        player.x = newX;
+        player.y = newY;
+      }
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      drawStreets();
+      drawBuildings();
+      drawNPCs();
+      drawPlayer();
+      drawMinimap();
+
+      requestAnimationFrame(update);
+    }
+
+    function showDialog(message) {
+      dialogBox.innerText = message;
+      dialogBox.style.display = "block";
+      setTimeout(() => {
+        dialogBox.style.display = "none";
+      }, 3000);
+    }
+
+    update();
+  </script>
 </body>
 </html>
-
