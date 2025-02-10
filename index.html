@@ -82,7 +82,7 @@
   <canvas id="gameCanvas"></canvas>
   <canvas id="minimap"></canvas>
   <div id="moneyTracker">$0</div>
-  <!-- Removed the original inventory div and added a hotbar -->
+  <!-- Hotbar for the inventory -->
   <div id="hotbar"></div>
   <div id="dialogBox"></div>
 
@@ -106,7 +106,7 @@
     const coinSound = new Audio("coin.mp3");
     const laserSound = new Audio("laser.mp3"); // Laser sound for shooting
 
-    // --- Player & Global Variables ---
+    // --- Global Variables & Player Setup ---
     const baseSpeed = 0.75; // Player's base speed
     let player = {
       x: canvasWidth / 2,
@@ -118,17 +118,20 @@
     };
 
     let money = 0;
-    let inventory = [];  // This array holds our hotbar items (max 5); duplicates are allowed.
+    let inventory = [];  // Hotbar items (max 5); duplicates allowed.
     let bikeSpeedActive = false;
     let gameOver = false;  // Flag to indicate player death
 
-    // --- Arrays for coins and cars ---
+    // --- Shooting Cooldown ---
+    let canShoot = true; // Allows shooting if true
+
+    // --- Arrays for Coins, Cars, and Projectiles ---
     let coins = [];   // Each coin is worth $50
     let cars = [];    // Cars spawn on roads
-
-    // --- Variables for projectiles and player facing ---
     let projectiles = [];  // Array to hold fired projectiles
-    let lastMovement = { x: 0, y: -1 }; // Default facing upward
+
+    // Keeps track of the last movement direction (default facing upward)
+    let lastMovement = { x: 0, y: -1 };
 
     // --- Constants for Buildings ---
     const wallThickness = 5;
@@ -167,12 +170,12 @@
         ],
         coins: []
       }
-      // Add additional areas as needed.
+      // Additional areas can be defined here.
     };
 
     let currentArea = { x: 0, y: 0 };
 
-    // --- Load the starting area ---
+    // --- Load the Starting Area ---
     let buildings = areas["0,0"].buildings;
     let streets = areas["0,0"].streets;
     let npcs = areas["0,0"].npcs;
@@ -214,9 +217,13 @@
 
     function getWalls(building) {
       const walls = [];
+      // Top wall
       walls.push({ x: building.x, y: building.y, width: building.width, height: wallThickness });
+      // Left wall
       walls.push({ x: building.x, y: building.y, width: wallThickness, height: building.height });
+      // Right wall
       walls.push({ x: building.x + building.width - wallThickness, y: building.y, width: wallThickness, height: building.height });
+      // Bottom wall with door gap
       const doorX = building.x + building.width / 2 - doorWidth / 2;
       walls.push({ x: building.x, y: building.y + building.height - wallThickness, width: doorX - building.x, height: wallThickness });
       walls.push({ x: doorX + doorWidth, y: building.y + building.height - wallThickness, width: (building.x + building.width) - (doorX + doorWidth), height: wallThickness });
@@ -384,7 +391,6 @@
       for (let i = 0; i < 5; i++) {
         const slotDiv = document.createElement("div");
         slotDiv.classList.add("hotbar-slot");
-        // Display the item name if present; otherwise, show the slot number.
         slotDiv.innerText = inventory[i] ? inventory[i] : (i + 1).toString();
         slotDiv.addEventListener("click", () => {
           useHotbarSlot(i);
@@ -414,14 +420,25 @@
         showDialog("Bike boost is already active!");
         return;
       }
-      // Remove only the Bike in the specified hotbar slot.
+      // Remove the Bike from the specified hotbar slot.
       inventory.splice(index, 1);
       updateHotbarDisplay();
       bikeSpeedActive = true;
+      // Increase the player's speed by 25%.
       player.speed = baseSpeed * 1.25;
+      // If the player is moving, update the velocity immediately.
+      if (player.dx !== 0 || player.dy !== 0) {
+        player.dx = lastMovement.x * player.speed;
+        player.dy = lastMovement.y * player.speed;
+      }
       showDialog("Bike activated: Speed boost for 10 seconds!");
       setTimeout(() => {
         player.speed = baseSpeed;
+        // Update velocity if the player is still moving.
+        if (player.dx !== 0 || player.dy !== 0) {
+          player.dx = lastMovement.x * player.speed;
+          player.dy = lastMovement.y * player.speed;
+        }
         bikeSpeedActive = false;
         showDialog("Bike boost ended.");
       }, 10000);
@@ -531,8 +548,10 @@
       }
     }
 
-    // --- Projectile Firing ---
+    // --- Projectile Firing with 3-Second Cooldown ---
     function fireProjectile() {
+      if (!canShoot) return;  // Do nothing if on cooldown.
+      canShoot = false;
       laserSound.play();
       const startX = player.x + player.size / 2;
       const startY = player.y + player.size / 2;
@@ -553,6 +572,10 @@
         size: 5
       };
       projectiles.push(projectile);
+      // Set a 3-second cooldown before allowing another shot.
+      setTimeout(() => {
+        canShoot = true;
+      }, 3000);
     }
 
     function updateProjectiles() {
@@ -665,7 +688,7 @@
 
     // --- Key Listeners ---
     document.addEventListener("keydown", (e) => {
-      // Movement (WASD and arrow keys).
+      // Movement (WASD and arrow keys)
       if (e.key === "ArrowRight" || e.key === "d") {
         player.dx = player.speed;
         lastMovement = { x: 1, y: 0 };
@@ -685,7 +708,6 @@
       }
       
       // --- Vendor Purchase vs. Hotbar Usage ---
-      // If a vendor is active, process vendor purchases and immediately return.
       if (activeVendor) {
         if (e.key === "1") {
           if (money >= activeVendor.carPrice) {
@@ -702,7 +724,7 @@
             showDialog("Not enough money for Car!");
           }
           activeVendor = null;
-          return; // Prevent further processing this key event.
+          return;
         } else if (e.key === "2") {
           if (money >= activeVendor.bikePrice) {
             if (inventory.length < 5) {
@@ -718,11 +740,11 @@
             showDialog("Not enough money for Bike!");
           }
           activeVendor = null;
-          return; // Prevent further processing.
+          return;
         }
       }
       
-      // If no vendor is active, check for hotbar usage with keys 1-5.
+      // Hotbar usage for keys 1-5 (if no vendor is active).
       if (["1", "2", "3", "4", "5"].includes(e.key)) {
         let slotIndex = parseInt(e.key) - 1;
         useHotbarSlot(slotIndex);
