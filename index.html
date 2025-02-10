@@ -87,6 +87,9 @@
 
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
+    // For area transitions we use these dimensions.
+    const canvasWidth = canvas.width;
+    const canvasHeight = canvas.height;
 
     // --- Preload Sounds ---
     const deathSound = new Audio("death.mp3");
@@ -95,8 +98,8 @@
     // --- Player & Global Variables ---
     const baseSpeed = 0.75; // Player's base speed
     let player = {
-      x: canvas.width / 2,
-      y: canvas.height / 2,
+      x: canvasWidth / 2,
+      y: canvasHeight / 2,
       size: 20,
       speed: baseSpeed,
       dx: 0,
@@ -108,7 +111,8 @@
     let bikeSpeedActive = false;
     let gameOver = false;  // Flag to indicate player death
 
-    // Arrays for coins and cars
+    // --- Arrays for coins and cars ---
+    // These arrays will be reloaded when an area is loaded.
     let coins = [];   // Each coin is worth $50
     let cars = [];    // Cars spawn on roads
 
@@ -122,23 +126,53 @@
     const doorWidth = 40;
     const doorHeight = 15;
 
-    // --- Buildings & Streets ---
-    let buildings = [
-      { x: 200, y: 150, width: 100, height: 100 },
-      { x: 500, y: 300, width: 150, height: 150 },
-      { x: 700, y: 30,  width: 120, height: 200 },
-      { x: 450, y: 500, width: 200, height: 120 }
-    ];
-    let streets = [
-      { x: 0, y: 250, width: canvas.width, height: 50 },
-      { x: 400, y: 0, width: 50, height: canvas.height }
-    ];
+    // --- World Areas ---
+    // Define the world as a grid of areas. Each area holds its own arrays.
+    const areas = {
+      "0,0": {
+        buildings: [
+          { x: 200, y: 150, width: 100, height: 100 },
+          { x: 500, y: 300, width: 150, height: 150 },
+          { x: 700, y: 30,  width: 120, height: 200 },
+          { x: 450, y: 500, width: 200, height: 120 }
+        ],
+        streets: [
+          { x: 0, y: 250, width: canvasWidth, height: 50 },
+          { x: 400, y: 0, width: 50, height: canvasHeight }
+        ],
+        npcs: [
+          { x: 600, y: 400, size: 20, message: "Vehicle Seller", type: "vehicleSeller", carPrice: 1000, bikePrice: 100 },
+          { x: 250, y: 350, size: 20, message: "Stay on the sidewalks!" }
+        ],
+        coins: []
+      },
+      "1,0": {
+        // This area is to the right of area "0,0".
+        buildings: [
+          { x: 300, y: 100, width: 120, height: 120 }
+        ],
+        streets: [
+          { x: 0, y: 200, width: canvasWidth, height: 50 },
+          { x: 300, y: 0, width: 50, height: canvasHeight }
+        ],
+        npcs: [
+          { x: 400, y: 300, size: 20, message: "Welcome to area (1,0)!", type: "info" }
+        ],
+        coins: []
+      }
+      // Add additional areas as needed.
+    };
 
-    // --- NPCs ---
-    let npcs = [
-      { x: 600, y: 400, size: 20, message: "Vehicle Seller", type: "vehicleSeller", carPrice: 1000, bikePrice: 100 },
-      { x: 250, y: 350, size: 20, message: "Stay on the sidewalks!" }
-    ];
+    // Track the current area coordinates (starting in "0,0")
+    let currentArea = { x: 0, y: 0 };
+
+    // --- Load the starting area ---
+    let buildings = areas["0,0"].buildings;
+    let streets = areas["0,0"].streets;
+    let npcs = areas["0,0"].npcs;
+    coins = areas["0,0"].coins;
+
+    // --- NPC Interaction ---
     let activeVendor = null;
     const interactionThreshold = 100;
 
@@ -152,7 +186,7 @@
       );
     }
 
-    // Check collision against building walls only
+    // Check collision against building walls only.
     function checkWallCollision(x, y) {
       const pRect = { x: x, y: y, width: player.size, height: player.size };
       for (const building of buildings) {
@@ -164,7 +198,7 @@
       return false;
     }
 
-    // Check collision against cars (if any car collides with the player, return true)
+    // Check collision against cars.
     function checkCarCollision() {
       const pRect = { x: player.x, y: player.y, width: player.size, height: player.size };
       for (const car of cars) {
@@ -174,7 +208,7 @@
       return false;
     }
 
-    // Compute wall segments for a building (with a gap for the door)
+    // Compute wall segments for a building (with a gap for the door).
     function getWalls(building) {
       const walls = [];
       // Top wall
@@ -191,26 +225,24 @@
     }
 
     // --- Drawing Functions ---
-
-    // Draw speed lines behind the player when bike boost is active.
     function drawSpeedLines() {
       if (!bikeSpeedActive) return;
       let angle = Math.atan2(player.dy, player.dx);
       if (player.dx === 0 && player.dy === 0) angle = 0;
       let behindAngle = angle + Math.PI;
-      let centerX = player.x + player.size / 2;
-      let centerY = player.y + player.size / 2;
-      let perpX = -Math.sin(angle);
-      let perpY = Math.cos(angle);
+      const centerX = player.x + player.size / 2;
+      const centerY = player.y + player.size / 2;
+      const perpX = -Math.sin(angle);
+      const perpY = Math.cos(angle);
       const lineLength = 30;
       ctx.strokeStyle = "rgba(255,255,255,0.7)";
       ctx.lineWidth = 2;
       for (let i = -1; i <= 1; i++) {
-        let offset = i * 5;
-        let startX = centerX + perpX * offset;
-        let startY = centerY + perpY * offset;
-        let endX = startX + Math.cos(behindAngle) * lineLength;
-        let endY = startY + Math.sin(behindAngle) * lineLength;
+        const offset = i * 5;
+        const startX = centerX + perpX * offset;
+        const startY = centerY + perpY * offset;
+        const endX = startX + Math.cos(behindAngle) * lineLength;
+        const endY = startY + Math.sin(behindAngle) * lineLength;
         ctx.beginPath();
         ctx.moveTo(startX, startY);
         ctx.lineTo(endX, endY);
@@ -218,27 +250,23 @@
       }
     }
 
-    // --- Modified: Draw Player as a Red Triangle That Rotates to Show Facing Direction ---
+    // --- Draw the Player as a Rotated Red Triangle ---
     function drawPlayer() {
       drawSpeedLines();
       ctx.save();
-      // Translate to the player's center
+      // Translate to the player's center.
       const centerX = player.x + player.size / 2;
       const centerY = player.y + player.size / 2;
       ctx.translate(centerX, centerY);
-      // Calculate rotation angle based on lastMovement.
-      // Our local triangle is defined with its tip at (0, -size/2)
-      // Add Math.PI/2 so that a lastMovement of (0, -1) (i.e. upward) produces 0 rotation.
-      const angle = Math.atan2(lastMovement.y, lastMovement.x) + Math.PI/2;
+      // Rotate based on last movement. Adding Math.PI/2 so that default (0, -1) is 0 rotation.
+      const angle = Math.atan2(lastMovement.y, lastMovement.x) + Math.PI / 2;
       ctx.rotate(angle);
       ctx.fillStyle = "red";
       ctx.beginPath();
-      // Draw an isosceles triangle in local coordinates:
-      // Tip at (0, -player.size/2), bottom left at (-player.size/2, player.size/2),
-      // and bottom right at (player.size/2, player.size/2)
-      ctx.moveTo(0, -player.size/2);
-      ctx.lineTo(-player.size/2, player.size/2);
-      ctx.lineTo(player.size/2, player.size/2);
+      // Draw an isosceles triangle with its tip at (0, -player.size/2)
+      ctx.moveTo(0, -player.size / 2);
+      ctx.lineTo(-player.size / 2, player.size / 2);
+      ctx.lineTo(player.size / 2, player.size / 2);
       ctx.closePath();
       ctx.fill();
       ctx.restore();
@@ -303,7 +331,7 @@
       });
     }
 
-    // --- NEW: Draw Projectiles ---
+    // --- Draw Projectiles ---
     function drawProjectiles() {
       ctx.fillStyle = "orange";
       projectiles.forEach(p => {
@@ -315,8 +343,8 @@
 
     function drawMinimap() {
       minimapCtx.clearRect(0, 0, minimap.width, minimap.height);
-      const scaleX = minimap.width / canvas.width;
-      const scaleY = minimap.height / canvas.height;
+      const scaleX = minimap.width / canvasWidth;
+      const scaleY = minimap.height / canvasHeight;
       buildings.forEach(b => {
         minimapCtx.fillStyle = "lightgray";
         minimapCtx.fillRect(b.x * scaleX, b.y * scaleY, b.width * scaleX, b.height * scaleY);
@@ -426,8 +454,8 @@
       if (coins.length >= 5) return;
       const coinSize = 10;
       const coinValue = 50;
-      const x = Math.random() * (canvas.width - coinSize);
-      const y = Math.random() * (canvas.height - coinSize);
+      const x = Math.random() * (canvasWidth - coinSize);
+      const y = Math.random() * (canvasHeight - coinSize);
       coins.push({ x: x, y: y, size: coinSize, value: coinValue });
     }
     setInterval(spawnCoin, 5000);
@@ -439,14 +467,14 @@
       const carWidth = 40;
       const carHeight = 20;
       if (roadChoice === 0) {
-        let road = { x: 0, y: 250, width: canvas.width, height: 50 };
+        let road = { x: 0, y: 250, width: canvasWidth, height: 50 };
         if (Math.random() < 0.5) {
           car.x = -carWidth;
           car.y = road.y + Math.random() * (road.height - carHeight);
           car.dx = 2;
           car.dy = 0;
         } else {
-          car.x = canvas.width;
+          car.x = canvasWidth;
           car.y = road.y + Math.random() * (road.height - carHeight);
           car.dx = -2;
           car.dy = 0;
@@ -454,14 +482,14 @@
         car.width = carWidth;
         car.height = carHeight;
       } else {
-        let road = { x: 400, y: 0, width: 50, height: canvas.height };
+        let road = { x: 400, y: 0, width: 50, height: canvasHeight };
         if (Math.random() < 0.5) {
           car.y = -carHeight;
           car.x = road.x + Math.random() * (road.width - carWidth);
           car.dx = 0;
           car.dy = 2;
         } else {
-          car.y = canvas.height;
+          car.y = canvasHeight;
           car.x = road.x + Math.random() * (road.width - carWidth);
           car.dx = 0;
           car.dy = -2;
@@ -485,9 +513,9 @@
         car.x += car.dx;
         car.y += car.dy;
         if (
-          car.x > canvas.width ||
+          car.x > canvasWidth ||
           car.x + car.width < 0 ||
-          car.y > canvas.height ||
+          car.y > canvasHeight ||
           car.y + car.height < 0
         ) {
           cars.splice(i, 1);
@@ -495,23 +523,21 @@
       }
     }
 
-    // --- NEW: Projectile Firing ---
+    // --- Projectile Firing ---
     function fireProjectile() {
-      // Determine starting position (center of player)
+      // Starting position at the center of the player.
       const startX = player.x + player.size / 2;
       const startY = player.y + player.size / 2;
-      // Use the last movement direction (default upward if not set)
+      // Use last movement direction (default upward if zero).
       let dirX = lastMovement.x;
       let dirY = lastMovement.y;
-      if (dirX === 0 && dirY === 0) { // safeguard
+      if (dirX === 0 && dirY === 0) {
         dirY = -1;
       }
-      // Normalize direction
       const len = Math.sqrt(dirX * dirX + dirY * dirY);
       const normX = dirX / len;
       const normY = dirY / len;
-      const projectileSpeed = 5; // Adjust as desired
-      // Create the projectile object
+      const projectileSpeed = 5;
       const projectile = {
         x: startX,
         y: startY,
@@ -522,16 +548,56 @@
       projectiles.push(projectile);
     }
 
-    // --- Update Projectiles in the Main Loop ---
     function updateProjectiles() {
       for (let i = projectiles.length - 1; i >= 0; i--) {
         const p = projectiles[i];
         p.x += p.dx;
         p.y += p.dy;
-        // Remove if off screen
-        if (p.x < 0 || p.x > canvas.width || p.y < 0 || p.y > canvas.height) {
+        if (p.x < 0 || p.x > canvasWidth || p.y < 0 || p.y > canvasHeight) {
           projectiles.splice(i, 1);
         }
+      }
+    }
+
+    // --- Area Transition Functions ---
+    function checkAreaTransition() {
+      // Horizontal transition.
+      if (player.x < 0) {
+        currentArea.x -= 1;
+        player.x = canvasWidth - player.size; // Appear on right side of new area
+        loadArea(currentArea.x, currentArea.y);
+      } else if (player.x + player.size > canvasWidth) {
+        currentArea.x += 1;
+        player.x = 0; // Appear on left side of new area
+        loadArea(currentArea.x, currentArea.y);
+      }
+      // Vertical transition.
+      if (player.y < 0) {
+        currentArea.y -= 1;
+        player.y = canvasHeight - player.size; // Appear on bottom side of new area
+        loadArea(currentArea.x, currentArea.y);
+      } else if (player.y + player.size > canvasHeight) {
+        currentArea.y += 1;
+        player.y = 0; // Appear on top side of new area
+        loadArea(currentArea.x, currentArea.y);
+      }
+    }
+
+    function loadArea(x, y) {
+      const key = `${x},${y}`;
+      if (areas[key]) {
+        buildings = areas[key].buildings;
+        streets = areas[key].streets;
+        npcs = areas[key].npcs;
+        coins = areas[key].coins || [];
+        showDialog(`Entering area (${x},${y})`);
+      } else {
+        showDialog("This area is not defined. Creating a new area.");
+        buildings = [];
+        streets = [];
+        npcs = [];
+        coins = [];
+        areas[key] = { buildings, streets, npcs, coins };
       }
     }
 
@@ -543,15 +609,18 @@
     }
     function restartGame() {
       gameOver = false;
-      player.x = canvas.width / 2;
-      player.y = canvas.height / 2;
+      player.x = canvasWidth / 2;
+      player.y = canvasHeight / 2;
       money = 0;
       inventory = [];
       coins = [];
       cars = [];
-      projectiles = []; // Reset projectiles as well
+      projectiles = [];
       updateMoneyDisplay();
       updateInventoryDisplay();
+      // Reload the starting area.
+      currentArea = { x: 0, y: 0 };
+      loadArea(currentArea.x, currentArea.y);
       requestAnimationFrame(update);
     }
 
@@ -592,24 +661,20 @@
 
     // --- Key Listeners ---
     document.addEventListener("keydown", (e) => {
-      // Movement and Inventory toggle
+      // Movement and inventory toggle.
       if (e.key === "ArrowRight" || e.key === "d") {
         player.dx = player.speed;
-        lastMovement = { x: 1, y: 0 }; // update facing direction
-      }
-      else if (e.key === "ArrowLeft" || e.key === "a") {
+        lastMovement = { x: 1, y: 0 };
+      } else if (e.key === "ArrowLeft" || e.key === "a") {
         player.dx = -player.speed;
         lastMovement = { x: -1, y: 0 };
-      }
-      else if (e.key === "ArrowUp" || e.key === "w") {
+      } else if (e.key === "ArrowUp" || e.key === "w") {
         player.dy = -player.speed;
         lastMovement = { x: 0, y: -1 };
-      }
-      else if (e.key === "ArrowDown" || e.key === "s") {
+      } else if (e.key === "ArrowDown" || e.key === "s") {
         player.dy = player.speed;
         lastMovement = { x: 0, y: 1 };
-      }
-      else if (e.key === "Tab") {
+      } else if (e.key === "Tab") {
         e.preventDefault();
         if (inventoryDiv.style.display === "none") {
           inventoryDiv.style.display = "block";
@@ -618,18 +683,17 @@
           inventoryDiv.style.display = "none";
         }
       }
-      // Fire projectile when space is pressed
+      // Fire projectile with space.
       else if (e.code === "Space") {
         fireProjectile();
       }
     });
-
     document.addEventListener("keyup", (e) => {
       if (["ArrowRight", "d", "ArrowLeft", "a"].includes(e.key)) player.dx = 0;
       if (["ArrowUp", "w", "ArrowDown", "s"].includes(e.key)) player.dy = 0;
     });
 
-    // Vendor interaction key listener
+    // Vendor interaction key listener.
     document.addEventListener("keydown", (e) => {
       if (activeVendor) {
         if (e.key === "1") {
@@ -658,7 +722,7 @@
       }
     });
 
-    // --- NEW: Restart Game on 'R' Key When Dead ---
+    // Restart game on R when dead.
     document.addEventListener("keydown", (e) => {
       if ((e.key === "r" || e.key === "R") && gameOver) {
         restartGame();
@@ -669,19 +733,18 @@
     function update() {
       if (gameOver) return;
 
-      // Update player position with wall collision check
+      // Update player position without clamping.
       let newX = player.x + player.dx;
       let newY = player.y + player.dy;
-      if (newX < 0) newX = 0;
-      if (newY < 0) newY = 0;
-      if (newX + player.size > canvas.width) newX = canvas.width - player.size;
-      if (newY + player.size > canvas.height) newY = canvas.height - player.size;
       if (!checkWallCollision(newX, newY)) {
         player.x = newX;
         player.y = newY;
       }
 
-      // Coin collection
+      // Check if the player has gone off-screen and transition areas.
+      checkAreaTransition();
+
+      // Coin collection.
       for (let i = coins.length - 1; i >= 0; i--) {
         let coin = coins[i];
         if (rectsIntersect(
@@ -703,7 +766,7 @@
         return;
       }
 
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.clearRect(0, 0, canvasWidth, canvasHeight);
       drawStreets();
       drawBuildings();
       drawNPCs();
@@ -730,3 +793,4 @@
   </script>
 </body>
 </html>
+
