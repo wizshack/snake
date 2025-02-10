@@ -39,25 +39,35 @@
       border-radius: 5px;
       font-size: 16px;
     }
-    /* Inventory panel (hidden by default) */
-    #inventory {
+    /* Hotbar styling (replaces the inventory panel) */
+    #hotbar {
       position: absolute;
-      top: 210px;
-      left: 10px;
-      background: rgba(0,0,0,0.8);
-      color: white;
-      padding: 10px;
+      bottom: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 10px;
+      background: rgba(0, 0, 0, 0.8);
+      padding: 5px;
       border-radius: 5px;
-      font-size: 16px;
-      display: none;
     }
-    #inventory .inventory-item {
+    .hotbar-slot {
+      width: 50px;
+      height: 50px;
+      background: rgba(255, 255, 255, 0.2);
+      border: 2px solid #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-size: 18px;
       cursor: pointer;
-      color: lightblue;
+      position: relative;
     }
+    /* Dialog box styling */
     #dialogBox {
       position: absolute;
-      bottom: 20px;
+      bottom: 80px;
       left: 50%;
       transform: translateX(-50%);
       background: rgba(0,0,0,0.8);
@@ -72,7 +82,8 @@
   <canvas id="gameCanvas"></canvas>
   <canvas id="minimap"></canvas>
   <div id="moneyTracker">$0</div>
-  <div id="inventory">Inventory:<br>Empty</div>
+  <!-- Removed the original inventory div and added a hotbar -->
+  <div id="hotbar"></div>
   <div id="dialogBox"></div>
 
   <script>
@@ -82,7 +93,7 @@
     const minimap = document.getElementById("minimap");
     const minimapCtx = minimap.getContext("2d");
     const moneyTracker = document.getElementById("moneyTracker");
-    const inventoryDiv = document.getElementById("inventory");
+    const hotbarDiv = document.getElementById("hotbar");
     const dialogBox = document.getElementById("dialogBox");
 
     canvas.width = window.innerWidth;
@@ -94,6 +105,7 @@
     // --- Preload Sounds ---
     const deathSound = new Audio("death.mp3");
     const coinSound = new Audio("coin.mp3");
+    const laserSound = new Audio("laser.mp3"); // New laser sound
 
     // --- Player & Global Variables ---
     const baseSpeed = 0.75; // Player's base speed
@@ -107,7 +119,7 @@
     };
 
     let money = 0;
-    let inventory = [];
+    let inventory = [];  // This array now holds our hotbar items (max 5)
     let bikeSpeedActive = false;
     let gameOver = false;  // Flag to indicate player death
 
@@ -380,25 +392,44 @@
       minimapCtx.fillRect(player.x * scaleX, player.y * scaleY, player.size * scaleX, player.size * scaleY);
     }
 
-    // --- Inventory & UI Functions ---
+    // --- Hotbar & UI Functions ---
     function updateMoneyDisplay() {
       moneyTracker.innerText = "$" + money;
     }
 
-    function updateInventoryDisplay() {
-      let html = "Inventory:<br>";
-      if (inventory.length === 0) {
-        html += "Empty";
-      } else {
-        inventory.forEach((item, index) => {
-          if (item === "Bike") {
-            html += `<span class="inventory-item" onclick="activateBikeBoost(${index})">Bike</span><br>`;
-          } else {
-            html += item + "<br>";
-          }
+    // This function creates five hotbar slots.
+    function updateHotbarDisplay() {
+      hotbarDiv.innerHTML = "";
+      for (let i = 0; i < 5; i++) {
+        const slotDiv = document.createElement("div");
+        slotDiv.classList.add("hotbar-slot");
+        // If an item exists in this slot, show its name; otherwise, show the slot number.
+        if (inventory[i]) {
+          slotDiv.innerText = inventory[i];
+        } else {
+          slotDiv.innerText = (i + 1).toString();
+        }
+        // Allow clicking on the slot to use it.
+        slotDiv.addEventListener("click", () => {
+          useHotbarSlot(i);
         });
+        hotbarDiv.appendChild(slotDiv);
       }
-      inventoryDiv.innerHTML = html;
+    }
+
+    // Use the item in the selected hotbar slot.
+    function useHotbarSlot(index) {
+      if (!inventory[index]) {
+        showDialog("Slot " + (index + 1) + " is empty!");
+        return;
+      }
+      if (inventory[index] === "Bike") {
+        activateBikeBoost(index);
+      } else if (inventory[index] === "Car") {
+        showDialog("Car equipped! (Not implemented)");
+      } else {
+        showDialog("No action for " + inventory[index]);
+      }
     }
 
     // --- Bike Boost Activation ---
@@ -407,8 +438,9 @@
         showDialog("Bike boost is already active!");
         return;
       }
+      // Remove the used Bike from the hotbar.
       inventory.splice(index, 1);
-      updateInventoryDisplay();
+      updateHotbarDisplay();
       bikeSpeedActive = true;
       player.speed = baseSpeed * 1.25;
       showDialog("Bike activated: Speed boost for 10 seconds!");
@@ -525,6 +557,9 @@
 
     // --- Projectile Firing ---
     function fireProjectile() {
+      // Play the laser sound when firing.
+      laserSound.play();
+      
       // Starting position at the center of the player.
       const startX = player.x + player.size / 2;
       const startY = player.y + player.size / 2;
@@ -617,7 +652,7 @@
       cars = [];
       projectiles = [];
       updateMoneyDisplay();
-      updateInventoryDisplay();
+      updateHotbarDisplay();
       // Reload the starting area.
       currentArea = { x: 0, y: 0 };
       loadArea(currentArea.x, currentArea.y);
@@ -661,7 +696,7 @@
 
     // --- Key Listeners ---
     document.addEventListener("keydown", (e) => {
-      // Movement and inventory toggle.
+      // Movement with arrow keys and WASD.
       if (e.key === "ArrowRight" || e.key === "d") {
         player.dx = player.speed;
         lastMovement = { x: 1, y: 0 };
@@ -674,52 +709,54 @@
       } else if (e.key === "ArrowDown" || e.key === "s") {
         player.dy = player.speed;
         lastMovement = { x: 0, y: 1 };
-      } else if (e.key === "Tab") {
-        e.preventDefault();
-        if (inventoryDiv.style.display === "none") {
-          inventoryDiv.style.display = "block";
-          updateInventoryDisplay();
-        } else {
-          inventoryDiv.style.display = "none";
-        }
       }
-      // Fire projectile with space.
+      // Fire projectile with spacebar (plays laser sound).
       else if (e.code === "Space") {
         fireProjectile();
       }
-    });
-    document.addEventListener("keyup", (e) => {
-      if (["ArrowRight", "d", "ArrowLeft", "a"].includes(e.key)) player.dx = 0;
-      if (["ArrowUp", "w", "ArrowDown", "s"].includes(e.key)) player.dy = 0;
-    });
-
-    // Vendor interaction key listener.
-    document.addEventListener("keydown", (e) => {
+      // Vendor interaction (when a vendor is active)
       if (activeVendor) {
         if (e.key === "1") {
           if (money >= activeVendor.carPrice) {
-            money -= activeVendor.carPrice;
-            inventory.push("Car");
-            showDialog("Bought Car!");
-            updateMoneyDisplay();
-            updateInventoryDisplay();
+            if (inventory.length < 5) {
+              money -= activeVendor.carPrice;
+              inventory.push("Car");
+              showDialog("Bought Car!");
+              updateMoneyDisplay();
+              updateHotbarDisplay();
+            } else {
+              showDialog("Hotbar is full!");
+            }
           } else {
             showDialog("Not enough money for Car!");
           }
           activeVendor = null;
         } else if (e.key === "2") {
           if (money >= activeVendor.bikePrice) {
-            money -= activeVendor.bikePrice;
-            inventory.push("Bike");
-            showDialog("Bought Bike!");
-            updateMoneyDisplay();
-            updateInventoryDisplay();
+            if (inventory.length < 5) {
+              money -= activeVendor.bikePrice;
+              inventory.push("Bike");
+              showDialog("Bought Bike!");
+              updateMoneyDisplay();
+              updateHotbarDisplay();
+            } else {
+              showDialog("Hotbar is full!");
+            }
           } else {
             showDialog("Not enough money for Bike!");
           }
           activeVendor = null;
         }
       }
+      // If no vendor is active, check for hotbar usage (keys 1-5).
+      if (!activeVendor && ["1", "2", "3", "4", "5"].includes(e.key)) {
+        let slotIndex = parseInt(e.key) - 1;
+        useHotbarSlot(slotIndex);
+      }
+    });
+    document.addEventListener("keyup", (e) => {
+      if (["ArrowRight", "d", "ArrowLeft", "a"].includes(e.key)) player.dx = 0;
+      if (["ArrowUp", "w", "ArrowDown", "s"].includes(e.key)) player.dy = 0;
     });
 
     // Restart game on R when dead.
@@ -789,6 +826,7 @@
 
     // --- Start the Game ---
     updateMoneyDisplay();
+    updateHotbarDisplay();
     update();
   </script>
 </body>
