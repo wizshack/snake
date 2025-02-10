@@ -98,14 +98,13 @@
 
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
-    // For area transitions we use these dimensions.
     const canvasWidth = canvas.width;
     const canvasHeight = canvas.height;
 
     // --- Preload Sounds ---
     const deathSound = new Audio("death.mp3");
     const coinSound = new Audio("coin.mp3");
-    const laserSound = new Audio("laser.mp3"); // New laser sound
+    const laserSound = new Audio("laser.mp3"); // Laser sound for shooting
 
     // --- Player & Global Variables ---
     const baseSpeed = 0.75; // Player's base speed
@@ -119,19 +118,17 @@
     };
 
     let money = 0;
-    let inventory = [];  // This array now holds our hotbar items (max 5)
+    let inventory = [];  // This array holds our hotbar items (max 5); duplicates are allowed.
     let bikeSpeedActive = false;
     let gameOver = false;  // Flag to indicate player death
 
     // --- Arrays for coins and cars ---
-    // These arrays will be reloaded when an area is loaded.
     let coins = [];   // Each coin is worth $50
     let cars = [];    // Cars spawn on roads
 
-    // --- NEW: Variables for projectiles and player facing ---
+    // --- Variables for projectiles and player facing ---
     let projectiles = [];  // Array to hold fired projectiles
-    // Keeps track of the last movement direction (default to upward)
-    let lastMovement = { x: 0, y: -1 };
+    let lastMovement = { x: 0, y: -1 }; // Default facing upward
 
     // --- Constants for Buildings ---
     const wallThickness = 5;
@@ -139,7 +136,6 @@
     const doorHeight = 15;
 
     // --- World Areas ---
-    // Define the world as a grid of areas. Each area holds its own arrays.
     const areas = {
       "0,0": {
         buildings: [
@@ -159,7 +155,6 @@
         coins: []
       },
       "1,0": {
-        // This area is to the right of area "0,0".
         buildings: [
           { x: 300, y: 100, width: 120, height: 120 }
         ],
@@ -175,7 +170,6 @@
       // Add additional areas as needed.
     };
 
-    // Track the current area coordinates (starting in "0,0")
     let currentArea = { x: 0, y: 0 };
 
     // --- Load the starting area ---
@@ -198,7 +192,6 @@
       );
     }
 
-    // Check collision against building walls only.
     function checkWallCollision(x, y) {
       const pRect = { x: x, y: y, width: player.size, height: player.size };
       for (const building of buildings) {
@@ -210,7 +203,6 @@
       return false;
     }
 
-    // Check collision against cars.
     function checkCarCollision() {
       const pRect = { x: player.x, y: player.y, width: player.size, height: player.size };
       for (const car of cars) {
@@ -220,16 +212,11 @@
       return false;
     }
 
-    // Compute wall segments for a building (with a gap for the door).
     function getWalls(building) {
       const walls = [];
-      // Top wall
       walls.push({ x: building.x, y: building.y, width: building.width, height: wallThickness });
-      // Left wall
       walls.push({ x: building.x, y: building.y, width: wallThickness, height: building.height });
-      // Right wall
       walls.push({ x: building.x + building.width - wallThickness, y: building.y, width: wallThickness, height: building.height });
-      // Bottom wall split (door gap in center)
       const doorX = building.x + building.width / 2 - doorWidth / 2;
       walls.push({ x: building.x, y: building.y + building.height - wallThickness, width: doorX - building.x, height: wallThickness });
       walls.push({ x: doorX + doorWidth, y: building.y + building.height - wallThickness, width: (building.x + building.width) - (doorX + doorWidth), height: wallThickness });
@@ -262,20 +249,16 @@
       }
     }
 
-    // --- Draw the Player as a Rotated Red Triangle ---
     function drawPlayer() {
       drawSpeedLines();
       ctx.save();
-      // Translate to the player's center.
       const centerX = player.x + player.size / 2;
       const centerY = player.y + player.size / 2;
       ctx.translate(centerX, centerY);
-      // Rotate based on last movement. Adding Math.PI/2 so that default (0, -1) is 0 rotation.
       const angle = Math.atan2(lastMovement.y, lastMovement.x) + Math.PI / 2;
       ctx.rotate(angle);
       ctx.fillStyle = "red";
       ctx.beginPath();
-      // Draw an isosceles triangle with its tip at (0, -player.size/2)
       ctx.moveTo(0, -player.size / 2);
       ctx.lineTo(-player.size / 2, player.size / 2);
       ctx.lineTo(player.size / 2, player.size / 2);
@@ -343,7 +326,6 @@
       });
     }
 
-    // --- Draw Projectiles ---
     function drawProjectiles() {
       ctx.fillStyle = "orange";
       projectiles.forEach(p => {
@@ -397,19 +379,13 @@
       moneyTracker.innerText = "$" + money;
     }
 
-    // This function creates five hotbar slots.
     function updateHotbarDisplay() {
       hotbarDiv.innerHTML = "";
       for (let i = 0; i < 5; i++) {
         const slotDiv = document.createElement("div");
         slotDiv.classList.add("hotbar-slot");
-        // If an item exists in this slot, show its name; otherwise, show the slot number.
-        if (inventory[i]) {
-          slotDiv.innerText = inventory[i];
-        } else {
-          slotDiv.innerText = (i + 1).toString();
-        }
-        // Allow clicking on the slot to use it.
+        // Display the item name if present; otherwise, show the slot number.
+        slotDiv.innerText = inventory[i] ? inventory[i] : (i + 1).toString();
         slotDiv.addEventListener("click", () => {
           useHotbarSlot(i);
         });
@@ -438,7 +414,7 @@
         showDialog("Bike boost is already active!");
         return;
       }
-      // Remove the used Bike from the hotbar.
+      // Remove only the Bike in the specified hotbar slot.
       inventory.splice(index, 1);
       updateHotbarDisplay();
       bikeSpeedActive = true;
@@ -494,7 +470,7 @@
 
     // --- Car Spawning and Updating ---
     function spawnCar() {
-      let roadChoice = Math.random() < 0.5 ? 0 : 1; // 0: horizontal, 1: vertical
+      let roadChoice = Math.random() < 0.5 ? 0 : 1;
       let car = {};
       const carWidth = 40;
       const carHeight = 20;
@@ -532,7 +508,7 @@
       cars.push(car);
     }
     function scheduleNextCar() {
-      let delay = Math.random() * 5000 + 3000; // Between 3 and 8 seconds
+      let delay = Math.random() * 5000 + 3000;
       setTimeout(() => {
         spawnCar();
         scheduleNextCar();
@@ -557,13 +533,9 @@
 
     // --- Projectile Firing ---
     function fireProjectile() {
-      // Play the laser sound when firing.
       laserSound.play();
-      
-      // Starting position at the center of the player.
       const startX = player.x + player.size / 2;
       const startY = player.y + player.size / 2;
-      // Use last movement direction (default upward if zero).
       let dirX = lastMovement.x;
       let dirY = lastMovement.y;
       if (dirX === 0 && dirY === 0) {
@@ -596,24 +568,22 @@
 
     // --- Area Transition Functions ---
     function checkAreaTransition() {
-      // Horizontal transition.
       if (player.x < 0) {
         currentArea.x -= 1;
-        player.x = canvasWidth - player.size; // Appear on right side of new area
+        player.x = canvasWidth - player.size;
         loadArea(currentArea.x, currentArea.y);
       } else if (player.x + player.size > canvasWidth) {
         currentArea.x += 1;
-        player.x = 0; // Appear on left side of new area
+        player.x = 0;
         loadArea(currentArea.x, currentArea.y);
       }
-      // Vertical transition.
       if (player.y < 0) {
         currentArea.y -= 1;
-        player.y = canvasHeight - player.size; // Appear on bottom side of new area
+        player.y = canvasHeight - player.size;
         loadArea(currentArea.x, currentArea.y);
       } else if (player.y + player.size > canvasHeight) {
         currentArea.y += 1;
-        player.y = 0; // Appear on top side of new area
+        player.y = 0;
         loadArea(currentArea.x, currentArea.y);
       }
     }
@@ -653,7 +623,6 @@
       projectiles = [];
       updateMoneyDisplay();
       updateHotbarDisplay();
-      // Reload the starting area.
       currentArea = { x: 0, y: 0 };
       loadArea(currentArea.x, currentArea.y);
       requestAnimationFrame(update);
@@ -696,7 +665,7 @@
 
     // --- Key Listeners ---
     document.addEventListener("keydown", (e) => {
-      // Movement with arrow keys and WASD.
+      // Movement (WASD and arrow keys).
       if (e.key === "ArrowRight" || e.key === "d") {
         player.dx = player.speed;
         lastMovement = { x: 1, y: 0 };
@@ -710,11 +679,13 @@
         player.dy = player.speed;
         lastMovement = { x: 0, y: 1 };
       }
-      // Fire projectile with spacebar (plays laser sound).
+      // Fire projectile with spacebar.
       else if (e.code === "Space") {
         fireProjectile();
       }
-      // Vendor interaction (when a vendor is active)
+      
+      // --- Vendor Purchase vs. Hotbar Usage ---
+      // If a vendor is active, process vendor purchases and immediately return.
       if (activeVendor) {
         if (e.key === "1") {
           if (money >= activeVendor.carPrice) {
@@ -731,6 +702,7 @@
             showDialog("Not enough money for Car!");
           }
           activeVendor = null;
+          return; // Prevent further processing this key event.
         } else if (e.key === "2") {
           if (money >= activeVendor.bikePrice) {
             if (inventory.length < 5) {
@@ -746,20 +718,22 @@
             showDialog("Not enough money for Bike!");
           }
           activeVendor = null;
+          return; // Prevent further processing.
         }
       }
-      // If no vendor is active, check for hotbar usage (keys 1-5).
-      if (!activeVendor && ["1", "2", "3", "4", "5"].includes(e.key)) {
+      
+      // If no vendor is active, check for hotbar usage with keys 1-5.
+      if (["1", "2", "3", "4", "5"].includes(e.key)) {
         let slotIndex = parseInt(e.key) - 1;
         useHotbarSlot(slotIndex);
       }
     });
+    
     document.addEventListener("keyup", (e) => {
       if (["ArrowRight", "d", "ArrowLeft", "a"].includes(e.key)) player.dx = 0;
       if (["ArrowUp", "w", "ArrowDown", "s"].includes(e.key)) player.dy = 0;
     });
 
-    // Restart game on R when dead.
     document.addEventListener("keydown", (e) => {
       if ((e.key === "r" || e.key === "R") && gameOver) {
         restartGame();
@@ -769,19 +743,13 @@
     // --- Main Update Loop ---
     function update() {
       if (gameOver) return;
-
-      // Update player position without clamping.
       let newX = player.x + player.dx;
       let newY = player.y + player.dy;
       if (!checkWallCollision(newX, newY)) {
         player.x = newX;
         player.y = newY;
       }
-
-      // Check if the player has gone off-screen and transition areas.
       checkAreaTransition();
-
-      // Coin collection.
       for (let i = coins.length - 1; i >= 0; i--) {
         let coin = coins[i];
         if (rectsIntersect(
@@ -794,15 +762,12 @@
           coins.splice(i, 1);
         }
       }
-
       updateCars();
       updateProjectiles();
-
       if (checkCarCollision()) {
         killPlayer();
         return;
       }
-
       ctx.clearRect(0, 0, canvasWidth, canvasHeight);
       drawStreets();
       drawBuildings();
@@ -815,7 +780,6 @@
       requestAnimationFrame(update);
     }
 
-    // --- Show Dialog ---
     function showDialog(message) {
       dialogBox.innerText = message;
       dialogBox.style.display = "block";
@@ -831,4 +795,3 @@
   </script>
 </body>
 </html>
-
