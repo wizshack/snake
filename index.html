@@ -112,6 +112,11 @@
     let coins = [];   // Each coin is worth $50
     let cars = [];    // Cars spawn on roads
 
+    // --- NEW: Variables for projectiles and player facing ---
+    let projectiles = [];  // Array to hold fired projectiles
+    // Keeps track of the last movement direction (default to upward)
+    let lastMovement = { x: 0, y: -1 };
+
     // --- Constants for Buildings ---
     const wallThickness = 5;
     const doorWidth = 40;
@@ -186,6 +191,8 @@
     }
 
     // --- Drawing Functions ---
+
+    // Draw speed lines behind the player when bike boost is active.
     function drawSpeedLines() {
       if (!bikeSpeedActive) return;
       let angle = Math.atan2(player.dy, player.dx);
@@ -211,10 +218,30 @@
       }
     }
 
+    // --- Modified: Draw Player as a Red Triangle That Rotates to Show Facing Direction ---
     function drawPlayer() {
       drawSpeedLines();
+      ctx.save();
+      // Translate to the player's center
+      const centerX = player.x + player.size / 2;
+      const centerY = player.y + player.size / 2;
+      ctx.translate(centerX, centerY);
+      // Calculate rotation angle based on lastMovement.
+      // Our local triangle is defined with its tip at (0, -size/2)
+      // Add Math.PI/2 so that a lastMovement of (0, -1) (i.e. upward) produces 0 rotation.
+      const angle = Math.atan2(lastMovement.y, lastMovement.x) + Math.PI/2;
+      ctx.rotate(angle);
       ctx.fillStyle = "red";
-      ctx.fillRect(player.x, player.y, player.size, player.size);
+      ctx.beginPath();
+      // Draw an isosceles triangle in local coordinates:
+      // Tip at (0, -player.size/2), bottom left at (-player.size/2, player.size/2),
+      // and bottom right at (player.size/2, player.size/2)
+      ctx.moveTo(0, -player.size/2);
+      ctx.lineTo(-player.size/2, player.size/2);
+      ctx.lineTo(player.size/2, player.size/2);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
     }
 
     function drawBuildings() {
@@ -273,6 +300,16 @@
       ctx.fillStyle = "black";
       cars.forEach(car => {
         ctx.fillRect(car.x, car.y, car.width, car.height);
+      });
+    }
+
+    // --- NEW: Draw Projectiles ---
+    function drawProjectiles() {
+      ctx.fillStyle = "orange";
+      projectiles.forEach(p => {
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        ctx.fill();
       });
     }
 
@@ -458,6 +495,46 @@
       }
     }
 
+    // --- NEW: Projectile Firing ---
+    function fireProjectile() {
+      // Determine starting position (center of player)
+      const startX = player.x + player.size / 2;
+      const startY = player.y + player.size / 2;
+      // Use the last movement direction (default upward if not set)
+      let dirX = lastMovement.x;
+      let dirY = lastMovement.y;
+      if (dirX === 0 && dirY === 0) { // safeguard
+        dirY = -1;
+      }
+      // Normalize direction
+      const len = Math.sqrt(dirX * dirX + dirY * dirY);
+      const normX = dirX / len;
+      const normY = dirY / len;
+      const projectileSpeed = 5; // Adjust as desired
+      // Create the projectile object
+      const projectile = {
+        x: startX,
+        y: startY,
+        dx: normX * projectileSpeed,
+        dy: normY * projectileSpeed,
+        size: 5
+      };
+      projectiles.push(projectile);
+    }
+
+    // --- Update Projectiles in the Main Loop ---
+    function updateProjectiles() {
+      for (let i = projectiles.length - 1; i >= 0; i--) {
+        const p = projectiles[i];
+        p.x += p.dx;
+        p.y += p.dy;
+        // Remove if off screen
+        if (p.x < 0 || p.x > canvas.width || p.y < 0 || p.y > canvas.height) {
+          projectiles.splice(i, 1);
+        }
+      }
+    }
+
     // --- Player Death and Restart ---
     function killPlayer() {
       deathSound.play();
@@ -472,6 +549,7 @@
       inventory = [];
       coins = [];
       cars = [];
+      projectiles = []; // Reset projectiles as well
       updateMoneyDisplay();
       updateInventoryDisplay();
       requestAnimationFrame(update);
@@ -514,10 +592,23 @@
 
     // --- Key Listeners ---
     document.addEventListener("keydown", (e) => {
-      if (e.key === "ArrowRight" || e.key === "d") player.dx = player.speed;
-      else if (e.key === "ArrowLeft" || e.key === "a") player.dx = -player.speed;
-      else if (e.key === "ArrowUp" || e.key === "w") player.dy = -player.speed;
-      else if (e.key === "ArrowDown" || e.key === "s") player.dy = player.speed;
+      // Movement and Inventory toggle
+      if (e.key === "ArrowRight" || e.key === "d") {
+        player.dx = player.speed;
+        lastMovement = { x: 1, y: 0 }; // update facing direction
+      }
+      else if (e.key === "ArrowLeft" || e.key === "a") {
+        player.dx = -player.speed;
+        lastMovement = { x: -1, y: 0 };
+      }
+      else if (e.key === "ArrowUp" || e.key === "w") {
+        player.dy = -player.speed;
+        lastMovement = { x: 0, y: -1 };
+      }
+      else if (e.key === "ArrowDown" || e.key === "s") {
+        player.dy = player.speed;
+        lastMovement = { x: 0, y: 1 };
+      }
       else if (e.key === "Tab") {
         e.preventDefault();
         if (inventoryDiv.style.display === "none") {
@@ -526,16 +617,19 @@
         } else {
           inventoryDiv.style.display = "none";
         }
-      } else if (e.key === "r" || e.key === "R") {
-        if (gameOver) {
-          restartGame();
-        }
+      }
+      // Fire projectile when space is pressed
+      else if (e.code === "Space") {
+        fireProjectile();
       }
     });
+
     document.addEventListener("keyup", (e) => {
       if (["ArrowRight", "d", "ArrowLeft", "a"].includes(e.key)) player.dx = 0;
       if (["ArrowUp", "w", "ArrowDown", "s"].includes(e.key)) player.dy = 0;
     });
+
+    // Vendor interaction key listener
     document.addEventListener("keydown", (e) => {
       if (activeVendor) {
         if (e.key === "1") {
@@ -564,9 +658,18 @@
       }
     });
 
+    // --- NEW: Restart Game on 'R' Key When Dead ---
+    document.addEventListener("keydown", (e) => {
+      if ((e.key === "r" || e.key === "R") && gameOver) {
+        restartGame();
+      }
+    });
+
     // --- Main Update Loop ---
     function update() {
       if (gameOver) return;
+
+      // Update player position with wall collision check
       let newX = player.x + player.dx;
       let newY = player.y + player.dy;
       if (newX < 0) newX = 0;
@@ -577,6 +680,7 @@
         player.x = newX;
         player.y = newY;
       }
+
       // Coin collection
       for (let i = coins.length - 1; i >= 0; i--) {
         let coin = coins[i];
@@ -590,17 +694,22 @@
           coins.splice(i, 1);
         }
       }
+
       updateCars();
+      updateProjectiles();
+
       if (checkCarCollision()) {
         killPlayer();
         return;
       }
+
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       drawStreets();
       drawBuildings();
       drawNPCs();
       drawCoins();
       drawCars();
+      drawProjectiles();
       drawPlayer();
       drawMinimap();
       requestAnimationFrame(update);
@@ -613,25 +722,6 @@
       setTimeout(() => {
         dialogBox.style.display = "none";
       }, 6000);
-    }
-
-    // --- Player Death and Restart ---
-    function killPlayer() {
-      deathSound.play();
-      gameOver = true;
-      showDialog("You died! Press R to restart.");
-    }
-    function restartGame() {
-      gameOver = false;
-      player.x = canvas.width / 2;
-      player.y = canvas.height / 2;
-      money = 0;
-      inventory = [];
-      coins = [];
-      cars = [];
-      updateMoneyDisplay();
-      updateInventoryDisplay();
-      requestAnimationFrame(update);
     }
 
     // --- Start the Game ---
